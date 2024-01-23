@@ -170,3 +170,106 @@ app.get("/getNote/:noteId", express.json(), async (req, res) => {
       res.status(500).json({ error: error.message });
     }
   });
+
+app.get("/getAllNotes", express.json(), async (req, res) => {
+  try {
+  const token = req.headers.authorization.split(" ")[1];
+  jwt.verify(token, "secret-key", async (err, decoded) => {
+    if (err) {
+      return res.status(401).send("Unauthorized.");
+    }
+
+    const collection = db.collection(COLLECTIONS.notes);
+
+    // collection.find() returns a cursor, we can use .toArray() to get all documents
+    const data = await collection.find({
+      username: decoded.username
+    }).toArray();
+
+    return res.status(200).json({ response: data });
+  });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete("/deleteNote/:noteId", express.json(), async (req, res) => {
+  try {
+    const noteId = req.params.noteId;
+    if (!ObjectId.isValid(noteId)) {
+      return res.status(400).json({ error: "Invalid note ID." });
+    }
+
+    const token = req.headers.authorization.split(" ")[1];
+    jwt.verify(token, "secret-key", async (err, decoded) => {
+      if (err) {
+        return res.status(401).send("Unauthorized.");
+      }
+  
+      const collection = db.collection(COLLECTIONS.notes);
+  
+      // collection.findOneAndDelete() atomically deletes and returns the deleted document
+      const data = await collection.findOneAndDelete({
+        username: decoded.username,
+        _id: new ObjectId(noteId)
+      });
+  
+      if(!data) {
+        return res.status(404).json({ response: `Note with ID ${noteId} not found for user ${decoded.username}.`});
+      }
+
+      return res.status(200).json({ response: `Document with ID ${noteId} properly deleted.`});
+    });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+});
+
+app.patch("/editNote/:noteId", express.json(), (req, res) => {
+  try {
+    const noteId = req.params.noteId;
+    if (!ObjectId.isValid(noteId)) {
+      return res.status(400).json({ error: "Invalid note ID." });
+    }
+
+    const { title, content } = req.body
+    if (!title && !content) {
+      return res.status(400).json({ error: "At least one of title or content must be present and not null to patch note"})
+    }
+
+    const token = req.headers.authorization.split(" ")[1];
+    jwt.verify(token, "secret-key", async (err, decoded) => {
+      if (err) {
+        return res.status(401).send("Unauthorized.");
+      }
+  
+      const collection = db.collection(COLLECTIONS.notes);
+      const filter = {
+        username: decoded.username,
+        _id: new ObjectId(noteId)
+      }
+      const update = {};
+
+      // There is probably a way to do this more elegantly
+      // But there's only two of these fields anyways
+      if(title) {
+        update.title = title;
+      }
+
+      if(content) {
+        update.content = content;
+      }
+  
+      // collection.updateOne gives us the number of matches and the number modified
+      const result = await collection.updateOne(filter, { $set: update });
+  
+      if(result.matchedCount == 0 || result.modifiedCount == 0) {
+        return res.status(404).json({ response: `Note with ID ${noteId} not found for user ${decoded.username}.`});
+      }
+
+      return res.status(200).json({ response: `Document with ID ${noteId} properly updated.`});
+    });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+});
